@@ -158,6 +158,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     app.refresh()
+    this.resetTransientState()
     this.prepareLevel()
     backdrop(this, shade(this.world.sky[0], -0.52), shade(this.world.sky[1], -0.84))
     this.resolveState()
@@ -183,6 +184,25 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.togglePause())
 
     if (isVictory(this.level, this.state)) this.time.delayedCall(250, () => this.finishLevel())
+  }
+
+  /** Phaser reuses the scene instance across restart(), so per-level state
+   * must be cleared here or a finished level's overlay/ended flag leaks into
+   * the next stop and swallows every tap. */
+  private resetTransientState(): void {
+    this.busy = false
+    this.ended = false
+    this.paused = false
+    this.overlay = null
+    this.overlayKind = null
+    this.hintStage = 0
+    this.history = []
+    this.future = []
+    this.newAchievements = []
+    this.resizePending = false
+    this.undoButton = null
+    this.redoButton = null
+    this.busVisuals.clear()
   }
 
   private prepareLevel(): void {
@@ -994,9 +1014,12 @@ export class GameScene extends Phaser.Scene {
         strokeAlpha: 0.5,
       }),
     )
-    build(cardX, cardY)
+    // The builder adds its content through `this.overlay`, so the reference
+    // must exist before it runs. Assigning it afterwards produced an empty
+    // card for the results, pause and deadlock screens.
     this.root.add(container)
     this.overlay = container
+    build(cardX, cardY)
   }
 
   private togglePause(): void {

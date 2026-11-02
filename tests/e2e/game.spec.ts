@@ -166,3 +166,104 @@ test('renders the board in a small portrait viewport without runtime errors', as
   expect(model.buses).toBeGreaterThan(0)
   expect(errors).toEqual([])
 })
+
+test('renders the results card and starts the next level playable', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  await boot(page)
+  await tapStart(page)
+  await page.waitForTimeout(400)
+
+  // Dispatch the verified solution and wait for each turn to settle. Clicking
+  // by world transform exercises the same input path a player uses.
+  const tapBus = async (busId: string): Promise<void> => {
+    const before = await page.evaluate(() => {
+      const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+        .__BJB_GAME__.scene.getScene('Game')
+      return scene.moves as number
+    })
+    const point = await page.evaluate((id) => {
+      const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+        .__BJB_GAME__.scene.getScene('Game')
+      const container = scene.busVisuals.get(id)
+      if (!container) throw new Error(`missing bus visual ${id}`)
+      const matrix = container.getWorldTransformMatrix()
+      return { x: matrix.tx, y: matrix.ty }
+    }, busId)
+    await page.mouse.click(point.x, point.y)
+    await page.waitForFunction(
+      (expected) => {
+        const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+          .__BJB_GAME__.scene.getScene('Game')
+        return scene.moves === expected && scene.busy === false
+      },
+      before + 1,
+      { timeout: 20_000 },
+    )
+  }
+
+  for (const busId of ['b2', 'b1', 'b3']) await tapBus(busId)
+  await page.waitForFunction(
+    () => {
+      const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+        .__BJB_GAME__.scene.getScene('Game')
+      return scene.overlayKind === 'results'
+    },
+    null,
+    { timeout: 20_000 },
+  )
+
+  const results = await page.evaluate(() => {
+    const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+      .__BJB_GAME__.scene.getScene('Game')
+    const texts: string[] = []
+    const buttons: string[] = []
+    for (const child of scene.overlay?.list ?? []) {
+      if (child.type === 'Text') texts.push(child.text as string)
+      if (child.getData?.('label')?.text) buttons.push(child.getData('label').text as string)
+    }
+    return { texts, buttons }
+  })
+  expect(results.texts).toContain('Stop cleared!')
+  expect(results.texts.some((text) => text.includes('3 moves'))).toBe(true)
+  expect(results.buttons).toContain('Next stop')
+
+  const nextPoint = await page.evaluate(() => {
+    const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+      .__BJB_GAME__.scene.getScene('Game')
+    const button = scene.overlay?.list.find(
+      (child: any) => child.getData?.('label')?.text === 'Next stop',
+    )
+    if (!button) throw new Error('Next stop button missing')
+    const matrix = button.getWorldTransformMatrix()
+    return { x: matrix.tx + button.width / 2, y: matrix.ty + button.height / 2 }
+  })
+  await page.mouse.click(nextPoint.x, nextPoint.y)
+  await page.waitForFunction(
+    () => {
+      const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+        .__BJB_GAME__.scene.getScene('Game')
+      return scene.level?.id === 'level-002' && scene.overlayKind === null && scene.ended === false
+    },
+    null,
+    { timeout: 20_000 },
+  )
+
+  const legal = await page.evaluate(() => {
+    const scene = (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+      .__BJB_GAME__.scene.getScene('Game')
+    return (scene.level.solution as string[]).find((id) => (scene.state.parked as string[]).includes(id))
+  })
+  expect(legal).toBeTruthy()
+  if (!legal) throw new Error('level 2 has no legal solution move')
+  await tapBus(legal)
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __BJB_GAME__: { scene: { getScene: (key: string) => any } } })
+          .__BJB_GAME__.scene.getScene('Game').moves,
+    ),
+  ).toBe(1)
+  expect(errors).toEqual([])
+})
