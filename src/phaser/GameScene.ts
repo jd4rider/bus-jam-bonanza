@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { openTipJar } from './support'
 import { app } from '../core/app'
 import { sound } from '../core/audio'
 import {
@@ -1194,6 +1195,14 @@ export class GameScene extends Phaser.Scene {
             this.scene.start('Menu')
           }
         }, { fill: 0x223354, textColor: PAPER, size: 15 }),
+      )
+      // Quiet support link: results panel only, under the actions inside the card.
+      overlay.add(
+        button(this, x + 50, y + 516, width - 100, 44, '☕ Buy me a coffee', () => openTipJar(), {
+          fill: 0x223354,
+          textColor: PAPER,
+          size: 14,
+        }),
       )
       overlay.add(
         label(this, x + width / 2, y + 476, this.mode === 'endless' ? 'Quit any time; the best run is saved.' : 'Three stars need par and no hints.', 11, '#6f7a8d', {
